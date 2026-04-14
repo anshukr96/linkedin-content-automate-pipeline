@@ -1,0 +1,55 @@
+name: Weekly LinkedIn Content Pipeline
+
+# -------------------------------------------------------------------
+# Triggers
+# -------------------------------------------------------------------
+on:
+  schedule:
+    - cron: "0 8 * * 0"   # Every Sunday at 08:00 UTC
+  workflow_dispatch:        # Also allow manual runs from the Actions tab
+
+# -------------------------------------------------------------------
+# Permissions (read-only for the repo itself)
+# -------------------------------------------------------------------
+permissions:
+  contents: read
+
+jobs:
+  run-pipeline:
+    name: Generate & Save Weekly LinkedIn Posts
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      # ---------------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ---------------------------------------------------------------
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # ---------------------------------------------------------------
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      # ---------------------------------------------------------------
+      - name: Install dependencies
+        run: pip install --upgrade pip && pip install -r requirements.txt
+
+      # ---------------------------------------------------------------
+      - name: Run LinkedIn content pipeline
+        env:
+          ANTHROPIC_API_KEY:  ${{ secrets.ANTHROPIC_API_KEY }}
+          NOTION_API_KEY:     ${{ secrets.NOTION_API_KEY }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python pipeline.py
