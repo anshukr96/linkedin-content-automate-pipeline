@@ -278,60 +278,22 @@ def scrape_frontend_articles() -> list[dict]:
     articles.extend(aggregator_articles)
     logger.info(f"  Aggregators: {len(aggregator_articles)} articles")
 
-        # ----------------------------------------------------------------
-        # Try progressively broader selectors until we find article nodes
-        # ----------------------------------------------------------------
-        candidates: list = []
-        selectors_to_try = [
-            "article",
-            ".post",
-            ".article",
-            ".entry",
-            ".card",
-            "li[class*='post']",
-            "li[class*='article']",
-            "div[class*='post']",
-            "div[class*='article']",
-        ]
-        for sel in selectors_to_try:
-            found = soup.select(sel)
-            if found:
-                candidates = found
-                logger.info(f"Selector '{sel}' matched {len(found)} items")
-                break
+    # Deduplicate by URL
+    seen_urls = set()
+    unique_articles = []
+    for a in articles:
+        if a["url"] not in seen_urls:
+            seen_urls.add(a["url"])
+            unique_articles.append(a)
 
-        # ----------------------------------------------------------------
-        # Parse structured items
-        # ----------------------------------------------------------------
-        if candidates:
-            for item in candidates:
-                try:
-                    article = _parse_article_item(item, now, cutoff)
-                    if article:
-                        articles.append(article)
-                    if len(articles) >= 40:
-                        break
-                except Exception as exc:
-                    logger.debug(f"Skipping item parse error: {exc}")
-                    continue
+    logger.info(f"Candidate articles collected: {len(unique_articles)}")
 
-        # ----------------------------------------------------------------
-        # Fallback: harvest all external links on the page
-        # ----------------------------------------------------------------
-        if not articles:
-            logger.info("Structured parsing yielded nothing — falling back to link harvest")
-            articles = _harvest_links(soup, now, cutoff)
-
-    except Exception as exc:
-        logger.error(f"Failed to fetch frontendcs.com: {exc}")
-
-    # Last-resort: hard-coded seed articles so the pipeline never starves
-    if not articles:
+    # Fallback: hard-coded seed articles if nothing scraped
+    if not unique_articles:
         logger.warning("No articles found — using fallback seed list")
-        articles = _fallback_seed_articles(now)
+        unique_articles = _fallback_seed_articles(now)
 
-    logger.info(f"Candidate articles collected: {len(articles)}")
-    return articles[:40]
+    return unique_articles[:40]
 
 
 def _parse_article_item(
