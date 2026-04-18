@@ -149,29 +149,134 @@ def _extract_company_from_url(url: str) -> str:
         return "Unknown"
 
 
-def scrape_frontend_articles() -> list[dict]:
-    """
-    Fetch https://frontendcs.com, parse article entries for the current and
-    previous year, filter out anything older than 6 months, and return up to
-    40 candidates.
-    """
-    logger.info("=" * 60)
-    logger.info("STEP 1 — Scraping articles from frontendcs.com")
-    logger.info("=" * 60)
-
-    source_url = "https://frontendcs.com"
-    now = datetime.now(timezone.utc)
-    cutoff = now - timedelta(days=180)
+def _scrape_source(name: str, url: str, now: datetime, cutoff: datetime) -> list[dict]:
+    """Scrape articles from a single engineering blog."""
     articles: list[dict] = []
 
     try:
         resp = requests.get(
-            source_url,
+            url,
             headers={"User-Agent": "Mozilla/5.0 (compatible; LinkedInPipeline/1.0)"},
             timeout=30,
         )
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
+
+        # Try to find article links
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
+            text = a.get_text(strip=True)
+
+            # Skip if not a valid article link (too short, navigation, etc.)
+            if not href.startswith("http") or len(text) < 20:
+                continue
+            if any(skip in href for skip in ["/tag/", "/category/", "/author/", "#"]):
+                continue
+
+            # Extract company from URL
+            company = _extract_company_from_url(href)
+
+            articles.append({
+                "title": text,
+                "company": company,
+                "url": href,
+                "date": now.isoformat(),
+                "source": name,
+            })
+
+            if len(articles) >= 10:  # Max 10 per source
+                break
+
+    except Exception as exc:
+        logger.debug(f"  Failed to scrape {name}: {exc}")
+
+    return articles
+
+
+def _scrape_aggregators(now: datetime, cutoff: datetime) -> list[dict]:
+    """Scrape from aggregator sites that link to engineering content."""
+    articles: list[dict] = []
+
+    aggregators = [
+        "https://news.ycombinator.com",
+        "https://www.reddit.com/r/programming",
+    ]
+
+    for agg_url in aggregators:
+        try:
+            resp = requests.get(
+                agg_url,
+                headers={"User-Agent": "Mozilla/5.0 (compatible; LinkedInPipeline/1.0)"},
+                timeout=30,
+            )
+            resp.raise_for_status()
+            soup = BeautifulSoup(resp.text, "html.parser")
+
+            # HN uses "titleline" class, Reddit uses "a" tags in posts
+            for item in soup.select(".titleline a, .post a"):
+                href = item.get("href", "")
+                text = item.get_text(strip=True)
+
+                if not href.startswith("http") or len(text) < 20:
+                    continue
+                # Filter for engineering-related domains
+                eng_domains = ["engineering", "techblog", "dev.to", "medium.com", "blog."]
+                if not any(d in href for d in eng_domains):
+                    continue
+
+                articles.append({
+                    "title": text,
+                    "company": _extract_company_from_url(href),
+                    "url": href,
+                    "date": now.isoformat(),
+                    "source": "aggregator",
+                })
+
+                if len(articles) >= 20:
+                    break
+
+        except Exception as exc:
+            logger.debug(f"  Failed to scrape {agg_url}: {exc}")
+
+    return articles
+
+
+# Engineering blogs to scrape (verified accessible)
+SOURCES = [
+    {"name": "frontendcs", "url": "https://frontendcs.com"},
+    {"name": "engineering.fb", "url": "https://engineering.fb.com"},
+    {"name": "netflixtechblog", "url": "https://netflixtechblog.com"},
+    {"name": "shopify.engineering", "url": "https://shopify.engineering"},
+    {"name": "vercel.blog", "url": "https://vercel.com/blog"},
+    {"name": "pragmaticengineer", "url": "https://pragmaticengineer.com"},
+    {"name": "stripe.blog", "url": "https://stripe.com/blog/engineering"},
+    {"name": "airbnb.blog", "url": "https://airbnb.io/blog"},
+]
+
+
+def scrape_frontend_articles() -> list[dict]:
+    """
+    Fetch from multiple engineering blogs, parse article entries for the
+    current and previous year, filter out anything older than 6 months,
+    and return up to 40 candidates.
+    """
+    logger.info("=" * 60)
+    logger.info("STEP 1 — Scraping articles from engineering blogs")
+    logger.info("=" * 60)
+
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=180)
+    articles: list[dict] = []
+
+    for source in SOURCES:
+        source_articles = _scrape_source(source["name"], source["url"], now, cutoff)
+        articles.extend(source_articles)
+        logger.info(f"  {source['name']}: {len(source_articles)} articles")
+
+    # Also try to get links from aggregator sites
+    aggregator_articles = _scrape_aggregators(now, cutoff)
+    articles.extend(aggregator_articles)
+    logger.info(f"  Aggregators: {len(aggregator_articles)} articles")
 
         # ----------------------------------------------------------------
         # Try progressively broader selectors until we find article nodes
