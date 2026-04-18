@@ -20,9 +20,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from urllib.parse import urlparse
 
+import anthropic
 import requests
 from bs4 import BeautifulSoup
-import anthropic
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -553,6 +553,11 @@ def save_to_notion(articles: list[dict], week_of: str) -> dict:
                 json=payload,
                 timeout=30,
             )
+            if resp.status_code >= 400:
+                logger.error(f"      Notion API error: {resp.status_code}")
+                logger.error(f"      Response: {resp.text}")
+                results["failed"] += 1
+                return results
             resp.raise_for_status()
             results["success"] += 1
             logger.info(f"      Saved OK (Notion page id: {resp.json().get('id', '?')})")
