@@ -256,44 +256,62 @@ SOURCES = [
 
 def scrape_frontend_articles() -> list[dict]:
     """
-    Fetch from multiple engineering blogs, parse article entries for the
-    current and previous year, filter out anything older than 6 months,
-    and return up to 40 candidates.
+    Fetch frontend case studies from the GitHub repo README:
+    https://github.com/andrew--r/frontend-case-studies
+    Parse markdown for article links and metadata.
     """
     logger.info("=" * 60)
-    logger.info("STEP 1 — Scraping articles from engineering blogs")
+    logger.info("STEP 1 — Scraping articles from GitHub frontend-case-studies")
     logger.info("=" * 60)
 
+    GITHUB_RAW_URL = "https://raw.githubusercontent.com/andrew--r/frontend-case-studies/master/README.md"
     now = datetime.now(timezone.utc)
-    cutoff = now - timedelta(days=180)
     articles: list[dict] = []
 
-    for source in SOURCES:
-        source_articles = _scrape_source(source["name"], source["url"], now, cutoff)
-        articles.extend(source_articles)
-        logger.info(f"  {source['name']}: {len(source_articles)} articles")
+    try:
+        resp = requests.get(GITHUB_RAW_URL, timeout=30)
+        resp.raise_for_status()
+        md = resp.text
 
-    # Also try to get links from aggregator sites
-    aggregator_articles = _scrape_aggregators(now, cutoff)
-    articles.extend(aggregator_articles)
-    logger.info(f"  Aggregators: {len(aggregator_articles)} articles")
+        # Each case study is a markdown list item with a link, e.g.:
+        # - [Airbnb: Lottie](https://airbnb.design/lottie/)
+        for line in md.splitlines():
+            if line.startswith("- ["):
+                # Extract [Title](URL)
+                try:
+                    title_start = line.index("[") + 1
+                    title_end = line.index("]", title_start)
+                    url_start = line.index("(", title_end) + 1
+                    url_end = line.index(")", url_start)
+                    title = line[title_start:title_end].strip()
+                    url = line[url_start:url_end].strip()
+                    # Try to extract company from title (e.g. "Airbnb: Lottie")
+                    if ":" in title:
+                        company, case_title = title.split(":", 1)
+                        company = company.strip()
+                        case_title = case_title.strip()
+                    else:
+                        company = _extract_company_from_url(url)
+                        case_title = title
+                    articles.append({
+                        "title": case_title,
+                        "company": company,
+                        "url": url,
+                        "date": now.isoformat(),
+                        "source": "github-frontend-case-studies",
+                    })
+                except Exception as exc:
+                    logger.debug(f"Failed to parse line: {line} — {exc}")
+            if len(articles) >= 40:
+                break
+    except Exception as exc:
+        logger.error(f"Failed to fetch or parse GitHub README: {exc}")
 
-    # Deduplicate by URL
-    seen_urls = set()
-    unique_articles = []
-    for a in articles:
-        if a["url"] not in seen_urls:
-            seen_urls.add(a["url"])
-            unique_articles.append(a)
-
-    logger.info(f"Candidate articles collected: {len(unique_articles)}")
-
-    # Fallback: hard-coded seed articles if nothing scraped
-    if not unique_articles:
+    logger.info(f"Candidate articles collected: {len(articles)}")
+    if not articles:
         logger.warning("No articles found — using fallback seed list")
-        unique_articles = _fallback_seed_articles(now)
-
-    return unique_articles[:40]
+        articles = _fallback_seed_articles(now)
+    return articles[:40]
 
 
 def _parse_article_item(
