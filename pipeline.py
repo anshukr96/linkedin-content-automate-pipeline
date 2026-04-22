@@ -46,7 +46,7 @@ TELEGRAM_CHAT_ID    = os.environ.get("TELEGRAM_CHAT_ID", "")
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-CLAUDE_MODEL = "claude-sonnet-4-20250514"
+CLAUDE_MODEL = "claude-3-sonnet-20240229"
 
 NOTION_HEADERS = {
     "Authorization": f"Bearer {NOTION_API_KEY}",
