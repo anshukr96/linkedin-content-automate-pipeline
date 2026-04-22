@@ -264,7 +264,7 @@ def scrape_frontend_articles() -> list[dict]:
     logger.info("STEP 1 — Scraping articles from GitHub frontend-case-studies")
     logger.info("=" * 60)
 
-    GITHUB_RAW_URL = "https://raw.githubusercontent.com/andrew--r/frontend-case-studies/master/README.md"
+    GITHUB_RAW_URL = "https://raw.githubusercontent.com/andrew--r/frontend-case-studies/master/readme.md"
     now = datetime.now(timezone.utc)
     articles: list[dict] = []
 
